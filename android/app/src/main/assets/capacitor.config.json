@@ -1,0 +1,8 @@
+{
+	"appId": "com.spendwise.app",
+	"appName": "SpendWise Financial Tracker",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https"
+	}
+}

@@ -1,0 +1,8 @@
+{
+  "name": "SpendWise Financial Tracker",
+  "description": "A comprehensive personal finance app with real-time balance tracking, expense categorization, budget management, and loan monitoring powered by Turso.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

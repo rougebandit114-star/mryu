@@ -1,0 +1,89 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable global helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == 'rougebandit114@gmail.com' && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Validation Blueprint for Profile
+    function isValidProfile(data) {
+      return data.keys().hasAll(['id', 'email'])
+        && data.id is string
+        && data.email is string
+        && data.email.size() <= 256;
+    }
+
+    // Validation Blueprint for Transaction
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['id', 'userId', 'amount', 'type', 'date', 'category'])
+        && data.id is string
+        && data.userId is string
+        && data.amount is number
+        && data.amount >= 0
+        && (data.type == 'income' || data.type == 'expense')
+        && data.date is string
+        && data.category is string;
+    }
+
+    // Validation Blueprint for Budget
+    function isValidBudget(data) {
+      return data.keys().hasAll(['id', 'userId', 'amount', 'month', 'year'])
+        && data.id is string
+        && data.userId is string
+        && data.amount is number
+        && data.amount >= 0
+        && data.month is string
+        && data.year is number;
+    }
+
+    // Rules for Profiles
+    match /profiles/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidProfile(incoming());
+      allow update: if (isOwner(userId) || isAdmin()) && isValidProfile(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // Rules for Transactions
+    match /transactions/{transactionId} {
+      allow read, list: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && (incoming().userId == request.auth.uid) && isValidTransaction(incoming());
+      allow update: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin()) && isValidTransaction(incoming()) && (incoming().userId == existing().userId);
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // Rules for Budgets
+    match /budgets/{budgetId} {
+      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && (incoming().userId == request.auth.uid) && isValidBudget(incoming());
+      allow update: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin()) && isValidBudget(incoming()) && (incoming().userId == existing().userId);
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+    }
+  }
+}
