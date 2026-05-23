@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, History, UserCircle, LogOut, Wallet, Plus, Shield } from 'lucide-react';
+import { LayoutDashboard, History, UserCircle, LogOut, Wallet, Plus, Shield, Download, FolderArchive } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { useAuth } from './FirebaseAuthProvider';
@@ -69,7 +69,17 @@ export function Layout() {
           ))}
         </nav>
 
-        <div className="px-4 mt-auto space-y-2">
+        <div className="px-4 mt-auto space-y-3">
+          <button
+            onClick={() => { window.location.href = '/api/download-project-zip'; }}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all border border-slate-700/50 cursor-pointer active:scale-[0.98] shadow-md"
+            title="Download full project source code as ZIP"
+            id="sidebar-download-zip-btn"
+          >
+            <FolderArchive className="w-4 h-4 text-emerald-400 mb-0.5" />
+            <span>Download ZIP</span>
+          </button>
+
           {user && (
             <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700/50">
               <div className="flex items-center gap-3 mb-3">
@@ -116,8 +126,24 @@ export function Layout() {
             </div>
           </div>
           
-          <div className="flex items-center gap-4">
-            {/* Action icons could go here */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => { window.location.href = '/api/download-project-zip'; }}
+              className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest cursor-pointer shadow-md shadow-emerald-600/10 active:scale-95 transition-all text-center"
+              title="Download full project folder as ZIP"
+              id="header-download-project-zip-btn"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Download ZIP</span>
+            </button>
+            <button
+              onClick={logout}
+              className="p-2 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 rounded-xl transition-all cursor-pointer active:scale-95"
+              title="Sign Out"
+              id="header-logout-btn"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         </header>
 
