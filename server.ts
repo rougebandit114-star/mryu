@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import archiver from "archiver";
 
 async function startServer() {
   const app = express();
@@ -10,6 +11,51 @@ async function startServer() {
   // API health and check endpoints
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
+  });
+
+  // Dynamic ZIP generation of the work environment (excluding build caches & node_modules)
+  app.get("/api/download-project-zip", (req, res) => {
+    // Force browser to handle as download
+    res.writeHead(200, {
+      "Content-Type": "application/zip",
+      "Content-Disposition": "attachment; filename=spendwise-project.zip",
+    });
+
+    const archive = archiver("zip", {
+      zlib: { level: 9 }, // Maximum compression level
+    });
+
+    archive.on("warning", (err) => {
+      if (err.code === "ENOENT") {
+        console.warn("Archiver warning:", err);
+      } else {
+        throw err;
+      }
+    });
+
+    archive.on("error", (err) => {
+      console.error("Archiver error:", err);
+      if (!res.headersSent) {
+        res.status(500).send({ error: err.message });
+      }
+    });
+
+    archive.pipe(res);
+
+    // Package root project directories, explicitly omitting massive build and node module files
+    archive.glob("**/*", {
+      cwd: process.cwd(),
+      ignore: [
+        "node_modules/**",
+        "dist/**",
+        ".git/**",
+        "*.zip",
+        ".env",
+      ],
+      dot: true, // Include dot files like .github configuration and .gitignore
+    });
+
+    archive.finalize();
   });
 
   // Administrative password update endpoint

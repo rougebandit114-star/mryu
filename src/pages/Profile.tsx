@@ -14,7 +14,9 @@ import {
   EyeOff,
   Settings as SettingsIcon,
   ArrowLeft,
-  UserCog
+  UserCog,
+  Download,
+  FolderArchive
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -119,6 +121,10 @@ export function Profile() {
       setError(err.message || 'Failed to update password.');
       setPasswordStatus('idle');
     }
+  };
+
+  const handleDownloadZip = () => {
+    window.location.href = '/api/download-project-zip';
   };
 
   return (
@@ -395,6 +401,28 @@ export function Profile() {
                     </form>
                   )}
                 </div>
+              </div>
+
+              {/* Developer & Offline Build Tool */}
+              <div className="bg-slate-50 dark:bg-slate-800/20 p-8 rounded-[24px] border border-slate-100 dark:border-white/5 flex flex-col md:flex-row gap-6 justify-between items-center animate-in fade-in slide-in-from-bottom-4 duration-300">
+                <div className="flex gap-4 items-center flex-1">
+                  <div className="w-14 h-14 bg-white dark:bg-slate-800 rounded-2xl shadow-sm flex items-center justify-center shrink-0 border border-slate-100 dark:border-slate-700">
+                    <FolderArchive className="w-7 h-7 text-emerald-500" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-slate-900 dark:text-white text-sm uppercase tracking-wider">Android Studio Source Exporter</h3>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest mt-1 leading-relaxed">
+                      Download the full workspace as a ZIP package. Import directly into Android Studio, compile native APKs, or configure plugins.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleDownloadZip}
+                  className="w-full md:w-auto px-6 py-4 bg-slate-900 dark:bg-emerald-600 hover:bg-slate-800 dark:hover:bg-emerald-500 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-slate-950/10 cursor-pointer active:scale-95 transition-all"
+                >
+                  <Download className="w-4 h-4" />
+                  Download Project ZIP
+                </button>
               </div>
             </div>
           </div>
