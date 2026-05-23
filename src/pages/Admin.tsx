@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Users, Database, Trash2, AlertTriangle, Search, Globe, Mail, Activity, Cpu, HardDrive, ChevronDown, ChevronUp, Wallet, ArrowUpRight, ArrowDownRight, HandCoins, PiggyBank, Calendar, CreditCard, Tag } from 'lucide-react';
+import { Shield, Users, Database, Trash2, AlertTriangle, Search, Globe, Mail, Activity, Cpu, HardDrive, ChevronDown, ChevronUp, Wallet, ArrowUpRight, ArrowDownRight, HandCoins, PiggyBank, Calendar, CreditCard, Tag, Lock, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../components/FirebaseAuthProvider';
 import { auth } from '../lib/firebase';
 import { getAllProfiles, clearAllTransactions, clearTransactionsByYear, deleteUserProfileAndData } from '../lib/db';
@@ -29,6 +29,169 @@ export function Admin() {
   const [dbState, setDbState] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [dbError, setDbError] = useState<string | null>(null);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+
+  // Modal administrative password reset states
+  const [passwordChangeTarget, setPasswordChangeTarget] = useState<{ id: string; email: string; name: string } | null>(null);
+  const [modalPasswordValue, setModalPasswordValue] = useState("");
+  const [modalPasswordVisible, setModalPasswordVisible] = useState(false);
+  const [modalPasswordStatus, setModalPasswordStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [modalPasswordLoading, setModalPasswordLoading] = useState(false);
+
+  const handleModalPasswordChange = async () => {
+    if (!passwordChangeTarget) return;
+    const password = modalPasswordValue.trim();
+    if (!password) {
+      alert("Please enter a valid password.");
+      return;
+    }
+    if (password.length < 6) {
+      alert("Password must be at least 6 characters.");
+      return;
+    }
+
+    try {
+      setModalPasswordLoading(true);
+      setModalPasswordStatus(null);
+
+      const idToken = await auth.currentUser?.getIdToken(true);
+      
+      const response = await fetch('/api/admin/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({ targetUid: passwordChangeTarget.id, newPassword: password })
+      });
+
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.error || 'Failed to update administrative password');
+      }
+
+      setModalPasswordStatus({ 
+        type: 'success', 
+        text: `Success: Password for ${passwordChangeTarget.email} changed instantly!` 
+      });
+      setModalPasswordValue('');
+    } catch (error: any) {
+      console.error("Modal Password Change Error:", error);
+      setModalPasswordStatus({
+        type: 'error',
+        text: error.message || 'Direct reset failed. The sandbox context may lack Admin Credentials.'
+      });
+    } finally {
+      setModalPasswordLoading(false);
+    }
+  };
+
+  const handleModalSendResetEmail = async () => {
+    if (!passwordChangeTarget) return;
+    try {
+      setModalPasswordLoading(true);
+      setModalPasswordStatus(null);
+      
+      const { sendPasswordResetEmail } = await import('firebase/auth');
+      await sendPasswordResetEmail(auth, passwordChangeTarget.email);
+
+      setModalPasswordStatus({ 
+        type: 'success', 
+        text: `Success: Safe password reset email dispatched directly from Firebase to ${passwordChangeTarget.email}!` 
+      });
+    } catch (error: any) {
+      console.error("Password reset email failed:", error);
+      setModalPasswordStatus({
+        type: 'error',
+        text: error.message || 'Failed to dispatch email reset instructions.'
+      });
+    } finally {
+      setModalPasswordLoading(false);
+    }
+  };
+
+  // Administrative password reset and updating states
+  const [passwordInputs, setPasswordInputs] = useState<{[userId: string]: string}>({});
+  const [passwordSecureShown, setPasswordSecureShown] = useState<{[userId: string]: boolean}>({});
+  const [passwordStatusMsg, setPasswordStatusMsg] = useState<{[userId: string]: {type: 'success' | 'error', text: string} | null}>({});
+  const [passwordActionLoading, setPasswordActionLoading] = useState<string | null>(null);
+
+  const handleDirectPasswordChange = async (userId: string, userEmail: string) => {
+    const password = passwordInputs[userId]?.trim();
+    if (!password) {
+      alert("Please enter a valid password.");
+      return;
+    }
+    if (password.length < 6) {
+      alert("Password must be at least 6 characters.");
+      return;
+    }
+
+    try {
+      setPasswordActionLoading(userId);
+      setPasswordStatusMsg(prev => ({ ...prev, [userId]: null }));
+
+      const idToken = await auth.currentUser?.getIdToken(true);
+      
+      const response = await fetch('/api/admin/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({ targetUid: userId, newPassword: password })
+      });
+
+      const resData = await response.json();
+      if (!response.ok) {
+        throw new Error(resData.error || 'Failed to update administrative password');
+      }
+
+      setPasswordStatusMsg(prev => ({
+        ...prev,
+        [userId]: { type: 'success', text: `Success: Password for ${userEmail} changed instantly via admin credentials!` }
+      }));
+      setPasswordInputs(prev => ({ ...prev, [userId]: '' }));
+    } catch (error: any) {
+      console.error("Direct Password Change Error:", error);
+      setPasswordStatusMsg(prev => ({
+        ...prev,
+        [userId]: { 
+          type: 'error', 
+          text: error.message || 'Direct reset failed. The sandbox context may lack Admin Credentials. Use ' + '"' + 'Send Reset Email' + '"' + ' instead.' 
+        }
+      }));
+    } finally {
+      setPasswordActionLoading(null);
+    }
+  };
+
+  const handleSendResetEmail = async (userId: string, userEmail: string) => {
+    if (!userEmail) {
+      alert("No email address found for this record.");
+      return;
+    }
+
+    try {
+      setPasswordActionLoading(userId + '-email');
+      setPasswordStatusMsg(prev => ({ ...prev, [userId]: null }));
+      
+      const { sendPasswordResetEmail } = await import('firebase/auth');
+      await sendPasswordResetEmail(auth, userEmail);
+
+      setPasswordStatusMsg(prev => ({
+        ...prev,
+        [userId]: { type: 'success', text: `Success: Safe password reset email dispatched directly from Firebase to ${userEmail}!` }
+      }));
+    } catch (error: any) {
+      console.error("Password reset email failed:", error);
+      setPasswordStatusMsg(prev => ({
+        ...prev,
+        [userId]: { type: 'error', text: error.message || 'Failed to dispatch email reset instructions.' }
+      }));
+    } finally {
+      setPasswordActionLoading(null);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -551,6 +714,21 @@ export function Admin() {
                               )}
                             </button>
                             <button 
+                              onClick={() => {
+                                setPasswordChangeTarget({ 
+                                  id: p.id, 
+                                  email: p.email, 
+                                  name: p.display_name || p.displayName || p.name || 'Anonymous User' 
+                                });
+                                setModalPasswordValue("");
+                                setModalPasswordStatus(null);
+                              }}
+                              className="p-2 text-slate-400 dark:text-slate-500 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-xl transition-all group/btn border border-transparent hover:border-emerald-500/10"
+                              title="Change Password"
+                            >
+                              <Lock className="w-4 h-4 transition-transform group-hover/btn:scale-110" />
+                            </button>
+                            <button 
                               onClick={() => handleDeleteUser(p.id)}
                               disabled={p.email?.toLowerCase() === 'rougebandit114@gmail.com' || actionLoading === p.id}
                               className="p-2 text-slate-400 dark:text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed group/btn border border-transparent hover:border-rose-500/10"
@@ -731,6 +909,91 @@ export function Admin() {
                                   )}
                                 </div>
                               </div>
+
+                              {/* Security Operations Area */}
+                              <div className="pt-6 mt-6 border-t border-slate-100 dark:border-slate-800">
+                                <h5 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-1.5">
+                                  <Lock className="w-4 h-4 text-emerald-500" />
+                                  Administrative Credentials Control
+                                </h5>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                                  {/* Form card */}
+                                  <div className="bg-slate-50 dark:bg-slate-800/20 p-5 rounded-2xl border border-slate-100 dark:border-slate-800/80">
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
+                                      Force Change User Password
+                                    </p>
+                                    
+                                    <div className="space-y-4">
+                                      <div className="relative">
+                                        <input
+                                          type={passwordSecureShown[p.id] ? "text" : "password"}
+                                          placeholder="Enter new 6+ char password"
+                                          value={passwordInputs[p.id] || ""}
+                                          onChange={(e) => setPasswordInputs(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                          className="w-full pl-4 pr-10 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold font-mono outline-none focus:ring-1 focus:ring-emerald-500/30 dark:text-white"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => setPasswordSecureShown(prev => ({ ...prev, [p.id]: !prev[p.id] }))}
+                                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 pointer-events-auto cursor-pointer"
+                                        >
+                                          {passwordSecureShown[p.id] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                        </button>
+                                      </div>
+
+                                      <div className="flex flex-col sm:flex-row gap-2">
+                                        <button
+                                          onClick={() => handleDirectPasswordChange(p.id, p.email)}
+                                          disabled={passwordActionLoading === p.id || !passwordInputs[p.id]}
+                                          className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] uppercase tracking-widest rounded-xl transition-all disabled:opacity-55 disabled:cursor-not-allowed shadow-md shadow-emerald-600/15 cursor-pointer"
+                                        >
+                                          {passwordActionLoading === p.id ? "Updating..." : "Direct Password Change"}
+                                        </button>
+                                        <button
+                                          onClick={() => handleSendResetEmail(p.id, p.email)}
+                                          disabled={passwordActionLoading === p.id + '-email'}
+                                          className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-black text-[10px] uppercase tracking-widest rounded-xl transition-all cursor-pointer"
+                                        >
+                                          {passwordActionLoading === p.id + '-email' ? "Dispatched..." : "Send Reset Email"}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Info card */}
+                                  <div className="p-5 bg-emerald-50/10 dark:bg-slate-800/10 rounded-2xl border border-emerald-500/10 dark:border-slate-800/50 space-y-2 text-xs">
+                                    <p className="font-extrabold uppercase tracking-widest text-[9px] text-emerald-605">
+                                      🛡️ Security Regulations & Guidance
+                                    </p>
+                                    <ul className="list-disc list-inside space-y-1.5 font-medium text-slate-500 dark:text-slate-400 pl-0.5 leading-relaxed">
+                                      <li><strong>Direct Reset</strong> applies the new security credentials instantly in the Firebase backend database using full administrator privileges.</li>
+                                      <li><strong>Send Reset Email</strong> dispatches an official secure reset link directly from Firebase to the registered address <span className="font-mono underline">{p.email}</span>.</li>
+                                      <li>All password change operations are tracked and authorized strictly for email address: <code className="bg-slate-150 p-0.5 rounded font-bold">rougebandit114@gmail.com</code>.</li>
+                                    </ul>
+                                  </div>
+                                </div>
+
+                                {passwordStatusMsg[p.id] && (
+                                  <div className={cn(
+                                    "p-4 rounded-xl border font-bold text-[10px] uppercase tracking-widest flex items-center gap-3 mt-4 animate-in fade-in slide-in-from-top-2 duration-300",
+                                    passwordStatusMsg[p.id]?.type === 'success' 
+                                      ? "bg-emerald-50 border-emerald-100 text-emerald-700 dark:bg-emerald-950/20 dark:border-emerald-900/50 dark:text-emerald-400" 
+                                      : "bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-950/20 dark:border-rose-900/30 dark:text-rose-455"
+                                  )}>
+                                    <Shield className="w-4 h-4 shrink-0" />
+                                    <div className="flex-1">
+                                      {passwordStatusMsg[p.id]?.text}
+                                    </div>
+                                    <button 
+                                      onClick={() => setPasswordStatusMsg(prev => ({ ...prev, [p.id]: null }))}
+                                      className="text-slate-400 hover:text-slate-605 font-extrabold text-[12px] uppercase tracking-normal"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </td>
                         </tr>
@@ -820,6 +1083,90 @@ export function Admin() {
                 className="w-full py-4 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Password Change Modal */}
+      {passwordChangeTarget && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white dark:bg-slate-900 max-w-md w-full rounded-[32px] p-8 shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-300 text-left relative">
+            <button 
+              onClick={() => setPasswordChangeTarget(null)}
+              className="absolute right-6 top-6 text-slate-400 hover:text-slate-650 dark:text-slate-500 dark:hover:text-slate-300 font-extrabold text-[12px] uppercase tracking-normal cursor-pointer"
+            >
+              ✕
+            </button>
+
+            <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-950/35 text-emerald-600 rounded-2xl flex items-center justify-center mb-6">
+              <Lock className="w-6 h-6" />
+            </div>
+
+            <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight mb-1">
+              Change User Password
+            </h3>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-6">
+              User: <span className="text-slate-700 dark:text-white font-extrabold font-mono">{passwordChangeTarget.name}</span> (<span className="text-slate-500 dark:text-slate-400 underline">{passwordChangeTarget.email}</span>)
+            </p>
+
+            <div className="space-y-4 mb-6">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-405">
+                New Security Credentials
+              </p>
+              
+              <div className="relative">
+                <input
+                  type={modalPasswordVisible ? "text" : "password"}
+                  placeholder="Enter 6+ character password"
+                  value={modalPasswordValue}
+                  onChange={(e) => setModalPasswordValue(e.target.value)}
+                  className="w-full pl-4 pr-10 py-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-bold font-mono outline-none focus:ring-1 focus:ring-emerald-500/30 dark:text-white"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => setModalPasswordVisible(!modalPasswordVisible)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-350 cursor-pointer pointer-events-auto"
+                >
+                  {modalPasswordVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+
+              {modalPasswordStatus && (
+                <div className={cn(
+                  "p-3 rounded-xl border font-bold text-[10px] uppercase tracking-widest flex items-center gap-2",
+                  modalPasswordStatus.type === 'success' 
+                    ? "bg-emerald-50 border-emerald-100 text-emerald-700 dark:bg-emerald-950/20 dark:border-emerald-900/50 dark:text-emerald-400" 
+                    : "bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-950/20 dark:border-rose-900/40 dark:text-rose-450"
+                )}>
+                  <Shield className="w-3.5 h-3.5 shrink-0" />
+                  <div className="flex-1">{modalPasswordStatus.text}</div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2.5">
+              <button 
+                onClick={handleModalPasswordChange}
+                disabled={modalPasswordLoading || !modalPasswordValue}
+                className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-md shadow-emerald-600/15 disabled:opacity-50 cursor-pointer text-center"
+              >
+                {modalPasswordLoading ? "Executing Password Update..." : "Update Password Instantly"}
+              </button>
+              <button 
+                onClick={handleModalSendResetEmail}
+                disabled={modalPasswordLoading}
+                className="w-full py-4 bg-slate-50 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all text-center cursor-pointer"
+              >
+                Send Password Reset Email
+              </button>
+              <button 
+                onClick={() => setPasswordChangeTarget(null)}
+                className="w-full py-3.5 text-slate-400 dark:text-slate-500 font-black text-[10px] uppercase tracking-widest hover:text-slate-650 transition-all text-center cursor-pointer"
+              >
+                Close Panel
               </button>
             </div>
           </div>
