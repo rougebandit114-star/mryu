@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Filter, ArrowUpRight, ArrowDownRight, History as HistoryIcon, BarChart3, List, Trash2 } from 'lucide-react';
+import { Search, Filter, ArrowUpRight, ArrowDownRight, History as HistoryIcon, BarChart3, List, Trash2, Download } from 'lucide-react';
 import { format, startOfYear, endOfYear, eachMonthOfInterval, isSameMonth } from 'date-fns';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -17,6 +17,8 @@ export function History() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [activeTab, setActiveTab] = useState<'records' | 'analytics'>('records');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
@@ -37,11 +39,48 @@ export function History() {
     return Array.from(years).sort((a, b) => b - a);
   }, [transactions]);
 
-  const filtered = transactions.filter(t => {
-    const matchesSearch = t.category.toLowerCase().includes(searchTerm.toLowerCase()) || (t.description?.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesFilter = filterType === 'all' || t.type === filterType;
-    return matchesSearch && matchesFilter;
-  });
+  const filtered = useMemo(() => {
+    return transactions.filter(t => {
+      const matchesSearch = t.category.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                            (t.description?.toLowerCase().includes(searchTerm.toLowerCase()));
+      const matchesFilter = filterType === 'all' || t.type === filterType;
+      
+      let matchesDate = true;
+      const itemDateStr = t.date.substring(0, 10); // Standardize to YYYY-MM-DD
+      if (startDate) {
+        matchesDate = matchesDate && itemDateStr >= startDate;
+      }
+      if (endDate) {
+        matchesDate = matchesDate && itemDateStr <= endDate;
+      }
+      
+      return matchesSearch && matchesFilter && matchesDate;
+    });
+  }, [transactions, searchTerm, filterType, startDate, endDate]);
+
+  const handleDownloadCSV = () => {
+    const headers = ['ID', 'Date', 'Category', 'Type', 'Amount (Rs)', 'Description'];
+    const rows = filtered.map(t => [
+      t.id,
+      format(new Date(t.date), 'yyyy-MM-dd HH:mm:ss'),
+      t.category,
+      t.type,
+      t.amount,
+      t.description || ''
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    const filename = `spendwise_history_${startDate || 'all'}_to_${endDate || 'all'}.csv`;
+    link.setAttribute("download", filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const yearlyData = useMemo(() => {
     const start = startOfYear(new Date(selectedYear, 0, 1));
@@ -131,6 +170,51 @@ export function History() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Date Filters & Download Bar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-slate-100 dark:border-slate-800/50">
+              <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+                <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 px-3 py-1.5 rounded-xl">
+                  <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">From</span>
+                  <input 
+                    type="date" 
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="bg-transparent text-xs font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer"
+                    id="date-filter-start"
+                  />
+                </div>
+                <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 px-3 py-1.5 rounded-xl">
+                  <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">To</span>
+                  <input 
+                    type="date" 
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="bg-transparent text-xs font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer"
+                    id="date-filter-end"
+                  />
+                </div>
+                {(startDate || endDate) && (
+                  <button
+                    onClick={() => { setStartDate(''); setEndDate(''); }}
+                    className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-rose-500 transition-colors"
+                  >
+                    Clear Dates
+                  </button>
+                )}
+              </div>
+
+              <button
+                onClick={handleDownloadCSV}
+                disabled={filtered.length === 0}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all cursor-pointer shadow-md active:scale-95 shrink-0"
+                id="download-history-btn"
+                title="Download history as CSV matching current filters"
+              >
+                <Download className="w-4 h-4" />
+                <span>Export ({filtered.length})</span>
+              </button>
             </div>
 
             <div className="divide-y divide-slate-50 dark:divide-slate-800">
