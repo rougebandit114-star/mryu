@@ -1,6 +1,9 @@
 import express from "express";
 import path from "path";
-import archiver from "archiver";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
+const archiver = require("archiver");
 
 async function startServer() {
   const app = express();
@@ -51,6 +54,10 @@ async function startServer() {
         ".git/**",
         "*.zip",
         ".env",
+        "android/.gradle/**",
+        "android/app/build/**",
+        "android/build/**",
+        "android/**/*.apk",
       ],
       dot: true, // Include dot files like .github configuration and .gitignore
     });
