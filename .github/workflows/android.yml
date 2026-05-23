@@ -38,6 +38,8 @@ jobs:
       - name: Build Debug Android APK via Gradle
         run: |
           cd android
+          # Prevent line ending corruption in git by freshly downloading the gradle wrapper jar
+          curl -sSLo gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.14.2/gradle/wrapper/gradle-wrapper.jar
           chmod +x gradlew
           ./gradlew assembleDebug
 
