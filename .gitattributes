@@ -1,0 +1,2 @@
+# Force git to treat all jar files as binary and prevent line ending conversions
+*.jar binary
