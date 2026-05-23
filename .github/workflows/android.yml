@@ -35,11 +35,14 @@ jobs:
       - name: Synchronize web assets with native app
         run: npx cap sync android
 
+      - name: Force Download Gradle 8.14.2 Wrapper JAR
+        run: |
+          mkdir -p android/gradle/wrapper
+          curl --fail --show-error --location --retry 3 -o android/gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.14.2/gradle/wrapper/gradle-wrapper.jar
+
       - name: Build Debug Android APK via Gradle
         run: |
           cd android
-          # Prevent line ending corruption in git by freshly downloading the gradle wrapper jar
-          curl -sSLo gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.14.2/gradle/wrapper/gradle-wrapper.jar
           chmod +x gradlew
           ./gradlew assembleDebug
 
