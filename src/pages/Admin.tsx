@@ -37,15 +37,35 @@ export function Admin() {
   const [modalPasswordStatus, setModalPasswordStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [modalPasswordLoading, setModalPasswordLoading] = useState(false);
 
+  // Custom modals/notifications to replace browser alerts & confirms inside the iframe safely
+  const [customAlert, setCustomAlert] = useState<{ title: string; message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [customConfirm, setCustomConfirm] = useState<{ 
+    title: string; 
+    message: string; 
+    onConfirm: () => void | Promise<void>; 
+    onCancel?: () => void;
+    confirmText?: string;
+    cancelText?: string;
+    danger?: boolean;
+  } | null>(null);
+
   const handleModalPasswordChange = async () => {
     if (!passwordChangeTarget) return;
     const password = modalPasswordValue.trim();
     if (!password) {
-      alert("Please enter a valid password.");
+      setCustomAlert({
+        title: "Required Field",
+        message: "Please enter a valid password.",
+        type: "error"
+      });
       return;
     }
     if (password.length < 6) {
-      alert("Password must be at least 6 characters.");
+      setCustomAlert({
+        title: "Weak Password",
+        message: "Password must be at least 6 characters.",
+        type: "error"
+      });
       return;
     }
 
@@ -118,11 +138,19 @@ export function Admin() {
   const handleDirectPasswordChange = async (userId: string, userEmail: string) => {
     const password = passwordInputs[userId]?.trim();
     if (!password) {
-      alert("Please enter a valid password.");
+      setCustomAlert({
+        title: "Required Field",
+        message: "Please enter a valid password.",
+        type: "error"
+      });
       return;
     }
     if (password.length < 6) {
-      alert("Password must be at least 6 characters.");
+      setCustomAlert({
+        title: "Weak Password",
+        message: "Password must be at least 6 characters.",
+        type: "error"
+      });
       return;
     }
 
@@ -167,7 +195,11 @@ export function Admin() {
 
   const handleSendResetEmail = async (userId: string, userEmail: string) => {
     if (!userEmail) {
-      alert("No email address found for this record.");
+      setCustomAlert({
+        title: "Action Aborted",
+        message: "No email address found for this user record.",
+        type: "error"
+      });
       return;
     }
 
@@ -226,22 +258,98 @@ export function Admin() {
   }
 
   const handleDeleteUser = async (userId: string) => {
-    try {
-      if (window.confirm('Are you sure you want to delete this user profile and all their transaction/budget data? This action cannot be undone.')) {
+    setCustomConfirm({
+      title: 'Danger: Delete User Record',
+      message: 'Are you sure you want to delete this user profile and all their transaction/budget data? This action cannot be undone.',
+      confirmText: 'Yes, Delete',
+      cancelText: 'Cancel',
+      danger: true,
+      onConfirm: async () => {
+        setCustomConfirm(null);
         setActionLoading(userId);
         
         console.log('Initiating delete for user:', userId);
-        await deleteUserProfileAndData(userId);
+        
+        let authDeleted = false;
+        try {
+          // 1. Delete from Firebase Authentication via Admin API
+          const idToken = await auth.currentUser?.getIdToken(true);
+          const response = await fetch('/api/admin/delete-user', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${idToken}`
+            },
+            body: JSON.stringify({ targetUid: userId })
+          });
 
-        await fetchData();
-        alert('SUCCESS: User profile, transactions, and budget data have been deleted from Firestore.');
+          if (!response.ok) {
+            const resData = await response.json();
+            throw new Error(resData.error || 'Server error');
+          }
+          authDeleted = true;
+        } catch (authErr: any) {
+          console.warn('Firebase Auth deletion failed:', authErr);
+          const errorMessage = authErr instanceof Error ? authErr.message : String(authErr);
+          
+          setCustomConfirm({
+            title: 'Authorization Deletion Issue',
+            message: `Failed to remove user account from Firebase Authentication (Reason: ${errorMessage}).\n\nWould you like to delete the user's Firestore profile, transactions, and budget data anyway to remove them from this dashboard?`,
+            confirmText: 'Purge Db profile',
+            cancelText: 'Abort',
+            danger: true,
+            onConfirm: async () => {
+              setCustomConfirm(null);
+              setActionLoading(userId);
+              try {
+                // Delete from Firestore
+                await deleteUserProfileAndData(userId);
+                await fetchData();
+                setCustomAlert({
+                  title: 'Database Profile Purged',
+                  message: "The user's database profile, transactions, and budgets were successfully purged from Firestore. However, they must be manually deleted from your Firebase Console Auth list because the Admin SDK is unable to authenticate without 'FIREBASE_SERVICE_ACCOUNT' credentials.",
+                  type: 'info'
+                });
+              } catch (fsErr: any) {
+                console.error('Firestore delete failed:', fsErr);
+                setCustomAlert({
+                  title: 'Action Failed',
+                  message: fsErr.message || 'Failed to complete database deletion.',
+                  type: 'error'
+                });
+              } finally {
+                setActionLoading(null);
+              }
+            },
+            onCancel: () => {
+              setCustomConfirm(null);
+              setActionLoading(null);
+            }
+          });
+          return;
+        }
+
+        try {
+          // 2. Delete from Firestore when complete auth deleted
+          await deleteUserProfileAndData(userId);
+          await fetchData();
+          setCustomAlert({
+            title: 'Success',
+            message: 'User profile, transactions, budgets, and Firebase authentication credentials have been successfully deleted.',
+            type: 'success'
+          });
+        } catch (error: any) {
+          console.error('Firestore Delete Exception:', error);
+          setCustomAlert({
+            title: 'Action Failed',
+            message: error.message || 'An error occurred during database profile/transaction deletion.',
+            type: 'error'
+          });
+        } finally {
+          setActionLoading(null);
+        }
       }
-    } catch (error: any) {
-      console.error('Admin Delete Exception:', error);
-      alert('Action Failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
-    } finally {
-      setActionLoading(null);
-    }
+    });
   };
 
   const handleClearLogs = async () => {
@@ -253,10 +361,18 @@ export function Admin() {
         await clearTransactionsByYear(selectedClearYear);
       }
       setShowConfirmClear(false);
-      alert(`${clearMode === 'all' ? 'All' : selectedClearYear} logs cleared successfully`);
+      setCustomAlert({
+        title: 'Action Succeeded',
+        message: `${clearMode === 'all' ? 'All history' : selectedClearYear + ' logs'} cleared successfully in the NoSQL Database.`,
+        type: 'success'
+      });
     } catch (error) {
       console.error('Clear logs failed:', error);
-      alert('Failed to clear logs: ' + (error instanceof Error ? error.message : String(error)));
+      setCustomAlert({
+        title: 'Clear Action Failed',
+        message: error instanceof Error ? error.message : String(error),
+        type: 'error'
+      });
     } finally {
       setActionLoading(null);
     }
@@ -1167,6 +1283,87 @@ export function Admin() {
                 className="w-full py-3.5 text-slate-400 dark:text-slate-500 font-black text-[10px] uppercase tracking-widest hover:text-slate-650 transition-all text-center cursor-pointer"
               >
                 Close Panel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom React Alert Modal */}
+      {customAlert && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 max-w-sm w-full rounded-[32px] p-8 shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200 text-center relative pointer-events-auto">
+            <div className={cn(
+              "w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-5",
+              customAlert.type === 'success' && "bg-emerald-50 dark:bg-emerald-950/35 text-emerald-650",
+              customAlert.type === 'error' && "bg-rose-50 dark:bg-rose-950/35 text-rose-500",
+              customAlert.type === 'info' && "bg-blue-50 dark:bg-blue-950/35 text-blue-500"
+            )}>
+              {customAlert.type === 'success' && <Shield className="w-6 h-6" />}
+              {customAlert.type === 'error' && <AlertTriangle className="w-6 h-6" />}
+              {customAlert.type === 'info' && <Database className="w-6 h-6" />}
+            </div>
+            <h3 className="text-lg font-black text-slate-900 dark:text-white tracking-tight mb-2">
+              {customAlert.title}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed mb-6 select-text whitespace-pre-line text-center">
+              {customAlert.message}
+            </p>
+            <button 
+              onClick={() => setCustomAlert(null)}
+              className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all cursor-pointer"
+            >
+              Acknowledge
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Custom React Confirm Modal */}
+      {customConfirm && (
+        <div className="fixed inset-0 z-[105] flex items-center justify-center p-6 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 max-w-md w-full rounded-[32px] p-8 shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200 text-left relative pointer-events-auto">
+            <div className={cn(
+              "w-12 h-12 rounded-2xl flex items-center justify-center mb-6",
+              customConfirm.danger ? "bg-rose-50 dark:bg-rose-950/35 text-rose-500" : "bg-emerald-50 dark:bg-emerald-950/35 text-emerald-600"
+            )}>
+              {customConfirm.danger ? <AlertTriangle className="w-6 h-6 animate-pulse" /> : <Shield className="w-6 h-6" />}
+            </div>
+            <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight mb-3">
+              {customConfirm.title}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium leading-relaxed mb-6 select-text whitespace-pre-line">
+              {customConfirm.message}
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <button 
+                onClick={async () => {
+                  try {
+                    await customConfirm.onConfirm();
+                  } catch (e) {
+                    console.error("Action execution error:", e);
+                  }
+                }}
+                className={cn(
+                  "py-4 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all text-center cursor-pointer text-white shadow-xs",
+                  customConfirm.danger 
+                    ? "bg-rose-600 hover:bg-rose-700 shadow-rose-600/10" 
+                    : "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/10"
+                )}
+              >
+                {customConfirm.confirmText || 'Yes, Proceed'}
+              </button>
+              <button 
+                onClick={() => {
+                  if (customConfirm.onCancel) {
+                    customConfirm.onCancel();
+                  } else {
+                    setCustomConfirm(null);
+                  }
+                }}
+                className="py-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 text-slate-500 dark:text-slate-400 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all text-center cursor-pointer"
+              >
+                {customConfirm.cancelText || 'Cancel'}
               </button>
             </div>
           </div>

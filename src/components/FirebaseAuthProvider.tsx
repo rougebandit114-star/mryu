@@ -190,7 +190,65 @@ export function FirebaseAuthProvider({ children }: { children: React.ReactNode }
     let createdUser: any = null;
     try {
       isSigningUpGlobal = true;
-      const result = await createUserWithEmailAndPassword(auth, email, pass);
+      let result;
+      try {
+        result = await createUserWithEmailAndPassword(auth, email, pass);
+      } catch (err: any) {
+        if (err && (err.code === 'auth/email-already-in-use' || err.message?.includes('email-already-in-use') || err.message?.includes('auth/email-already-in-use'))) {
+          console.log("Email already in use. Checking if it corresponds to an orphaned account to clean up or self-heal...");
+          try {
+            // First, try to self-heal by signing in on the client-side with the password they provided!
+            // This verifies they own the account and lets us safely recreate their database profile.
+            console.log("Attempting self-healing sign-in with provided password...");
+            const signinResult = await signInWithEmailAndPassword(auth, email, pass);
+            if (signinResult.user) {
+              console.log("Self-healing login authenticated successfully. Proceeding to restore missing database profile...");
+              result = signinResult;
+            } else {
+              throw err;
+            }
+          } catch (loginErr: any) {
+            console.log("Self-healing login check failed:", loginErr);
+            if (loginErr && (loginErr.code === 'auth/wrong-password' || loginErr.code === 'auth/invalid-credential' || loginErr.message?.includes('wrong-password') || loginErr.message?.includes('invalid-credential') || loginErr.message?.includes('invalid-email'))) {
+              throw new Error("This email is already registered in Firebase. To recreate your missing/deleted profile, please sign up using your correct original password for this email, or use a different email address.");
+            }
+
+            // Fallback: If login failed because of some other reason (not wrong password), try server-side cleanup
+            try {
+              const cleanResp = await fetch('/api/auth/clean-orphaned-auth', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+              });
+              if (cleanResp.ok) {
+                const cleanData = await cleanResp.json();
+                if (cleanData.cleaned) {
+                  console.log("Found and cleaned up an orphaned authenticated user. Retry registration.");
+                  result = await createUserWithEmailAndPassword(auth, email, pass);
+                } else {
+                  throw new Error("This email is already in use by another active account.");
+                }
+              } else {
+                const errData = await cleanResp.json().catch(() => ({}));
+                const serverError = errData.error || '';
+                if (serverError.toLowerCase().includes('insufficient permission') || serverError.toLowerCase().includes('credential')) {
+                  throw new Error("This email is registered in Firebase Authentication but has no database profile. To resolve, use your existing password during sign up to automatically restore/heal your profile, or delete the user from your Firebase Console Auth list.");
+                }
+                throw err;
+              }
+            } catch (cleanErr: any) {
+              console.error("Auto authentication cleanup check failed:", cleanErr);
+              if (cleanErr && cleanErr.message && (cleanErr.message.includes("database profile") || cleanErr.message.includes("already in use by another active account") || cleanErr.message.includes("recreate your missing/deleted profile"))) {
+                throw cleanErr;
+              }
+              throw new Error(`This email is already in use. If you recently deleted this account from the Admin Dashboard, use your existing password to sign up and auto-restore your profile, or manually delete it from your Firebase Console.`);
+            }
+          }
+        } else {
+          throw err;
+        }
+      }
+      
       createdUser = result.user;
       
       if (createdUser) {
